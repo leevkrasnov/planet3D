@@ -11,9 +11,10 @@ import {
   AbstractMesh,
 } from '@babylonjs/core'
 
+import { planetsConfig } from './planetsConfig'
+
 export class babylonContainer {
-  private planet: AbstractMesh | null = null
-  private maxSize: number = 1
+  private planets: { mesh: AbstractMesh; maxSize: number }[] = []
 
   constructor() {
     const canvas = document.createElement('canvas')
@@ -23,6 +24,10 @@ export class babylonContainer {
 
     const engine = new Engine(canvas, true, { stencil: true }, true)
     const scene = new Scene(engine)
+
+    scene.fogMode = Scene.FOGMODE_LINEAR
+    scene.fogStart = 30.0
+    scene.fogEnd = 80.0
 
     const camera: ArcRotateCamera = new ArcRotateCamera(
       'Camera',
@@ -37,28 +42,37 @@ export class babylonContainer {
 
     new HemisphericLight('light1', new Vector3(1, 1, 0), scene)
 
-    ImportMeshAsync('/Planet.gltf', scene).then((result) => {
-      const mesh = result.meshes[1]
+    Promise.all(
+      planetsConfig.map((planet) =>
+        ImportMeshAsync(planet.path, scene).then((result) => {
+          const mesh = result.meshes[1]
 
-      this.planet = mesh
-      this.planet.rotationQuaternion = null
-      this.planet.rotation.x = Math.PI / 4
-      this.planet.rotation.y = Math.PI / 6
-      this.planet.scaling.x = 1
+          mesh.position = planet.position
+          mesh.rotationQuaternion = null
+          mesh.rotation.x = Math.PI / 4
+          mesh.rotation.y = Math.PI / 6
+          mesh.scaling.setAll(planet.size)
 
-      const bbox = mesh.getBoundingInfo().boundingBox
-      const size = bbox.extendSize.scale(2)
-      console.log(size)
-      this.maxSize = Math.max(size.x, size.y, size.z)
+          const bbox = mesh.getBoundingInfo().boundingBox
+          const size = bbox.extendSize.scale(2)
+          const maxSize = Math.max(size.x, size.y, size.z) * planet.size
+          return { mesh, maxSize }
+        })
+      )
+    ).then((planets) => {
+      this.planets = planets
     })
 
     engine.runRenderLoop(() => {
-      if (this.planet) {
-        this.planet.rotation.y += 0.002
-
-        const distance = Vector3.Distance(camera.position, this.planet.position)
-
-        this.planet.isVisible = distance <= this.maxSize * 10
+      if (this.planets) {
+        this.planets.forEach((planet) => {
+          planet.mesh.rotation.y += 0.002
+          const distance = Vector3.Distance(
+            camera.position,
+            planet.mesh.position
+          )
+          planet.mesh.isVisible = distance <= planet.maxSize * 10
+        })
       }
       scene.render()
     })
